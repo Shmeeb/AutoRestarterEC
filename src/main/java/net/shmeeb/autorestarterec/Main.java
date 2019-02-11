@@ -25,10 +25,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 
-@Plugin(id="autorestarterec", name="AutoRestarterEC", version = "2.0")
+@Plugin(id="autorestarterec", name="AutoRestarterEC", version = "3.0")
 public class Main {
     private Date shutdownTime;
-    private final List<Integer> ALERT_TIMES = new ArrayList(Arrays.asList(1, 5, 10, 30, 60, 120, 180, 240, 300, 600, 1800));
+    private final List<Integer> ALERT_TIMES = new ArrayList(Arrays.asList(1, 5, 10, 30, 60, 300, 600, 1800));
     private List<Integer> done = new ArrayList<>();
 
     @Inject
@@ -40,7 +40,7 @@ public class Main {
     private static Main instance;
 
     private String broadcastMessage, broadcastMessageLogOff, broadcastMessageKicking, kickMessage;
-    private int hour1, hour2, minute1, minute2, second1, second2;
+    private int hour, minute, second, interval;
     private boolean restarted = false;
 
     @Listener
@@ -59,15 +59,12 @@ public class Main {
         }
 
         root = loader.load();
-        root.getNode("times").setComment("Time: (24 hour time, see here http://www.onlineconversion.com/date_12-24_hour.htm)");
+        root.getNode("time").setComment("Time: (24 hour time, see here http://www.onlineconversion.com/date_12-24_hour.htm)");
 
-        hour1 = root.getNode("times").getNode("one").getNode("hour").getInt();
-        minute1 = root.getNode("times").getNode("one").getNode("minute").getInt();
-        second1 = root.getNode("times").getNode("one").getNode("second").getInt();
-
-        hour2 = root.getNode("times").getNode("two").getNode("hour").getInt();
-        minute2 = root.getNode("times").getNode("two").getNode("minute").getInt();
-        second2 = root.getNode("times").getNode("two").getNode("second").getInt();
+        hour = root.getNode("time").getNode("hour").getInt();
+        minute = root.getNode("time").getNode("minute").getInt();
+        second = root.getNode("time").getNode("second").getInt();
+        interval = root.getNode("interval").getInt();
 
         broadcastMessage = root.getNode("messages").getNode("broadcast-message").getString();
         broadcastMessageLogOff = root.getNode("messages").getNode("broadcast-message-log-off").getString();
@@ -188,69 +185,39 @@ public class Main {
             future.setSeconds(now.getSeconds());
             shutdownTime = future;
         } else {
-            Date future1 = new Date();
-            Date future2 = new Date();
+            Date base = new Date();
             Date now = new Date();
 
-            future1.setHours(hour1);
-            future1.setMinutes(minute1);
-            future1.setSeconds(second1);
+            base.setHours(hour);
+            base.setMinutes(minute);
+            base.setSeconds(second);
 
-            future2.setHours(hour2);
-            future2.setMinutes(minute2);
-            future2.setSeconds(second2);
-
-//            outputDebug(now, future1, future2);
-
-            long f1diff = future1.getTime() - now.getTime();
-            long f2diff = future2.getTime() - now.getTime();
-
-            if (f1diff > 0 && f2diff > 0 && f2diff > f1diff) { //both restarts are in the future
-//                System.out.println("one is up next");
-                shutdownTime = future1;
-            } else if (f1diff < 0 && f2diff > 0 && f2diff > f1diff) { //in the middle of both restarts
-//                System.out.println("two is up next");
-                shutdownTime = future2;
-            } else if (f1diff < 0 && f2diff < 0) { //after both restarts
-//                System.out.println("one is up next (next day)");
-                Date nextDay = addDays(future1, 1);
-//                System.out.println(nextDay.toString());
-                shutdownTime = nextDay;
+            if (now.getHours() < 8) {
+                base = addDays(base, -1);
             }
+
+            //min supported interval is 3h
+            for (int i = 1; i <= 8; i++) {
+                Date attempt = new Date(base.getTime());
+
+                attempt.setHours(base.getHours() + (interval * i));
+
+                int minsBetween = (int)((attempt.getTime() - now.getTime()) / 1000L) / 60;
+
+//                System.out.println(attempt.toString() + " = " + minsBetween + " mins from the attempted reboot time");
+
+                //should be pos if attempt is in the future
+                //neg if attempt is in the past
+
+                if (minsBetween >= 30) {
+//                    System.out.println("selected " + attempt.toString());
+                    shutdownTime = attempt;
+                    return;
+                }
+            }
+
+            shutdownTime = base;
         }
-    }
-
-    private void outputDebug(Date now, Date future1, Date future2) {
-        System.out.println("------------------------------------------------");
-
-        System.out.println("timestamps:");
-        System.out.println("future1 debug: " + future1.toString());
-        System.out.println("future2 debug: " + future2.toString());
-
-        System.out.println("differences:");
-        int f1secondsBetween = (int) ((future1.getTime() - now.getTime()) / 1000L);
-        int f2secondsBetween = (int) ((future2.getTime() - now.getTime()) / 1000L);
-
-        if (f1secondsBetween > f2secondsBetween) {
-            System.out.println("f1 - now = " + String.valueOf(f1secondsBetween) + "s (greater)");
-            System.out.println("f2 - now = " + String.valueOf(f2secondsBetween) + "s");
-        } else {
-            System.out.println("f1 - now = " + String.valueOf(f1secondsBetween) + "s");
-            System.out.println("f2 - now = " + String.valueOf(f2secondsBetween) + "s (greater)");
-        }
-
-        long f1diff = future1.getTime() - now.getTime();
-        long f2diff = future2.getTime() - now.getTime();
-
-        if (f1diff > 0 && f2diff > 0 && f2diff > f1diff) {
-            System.out.println("one is up next");
-        } else if (f1diff < 0 && f2diff > 0 && f2diff > f1diff) { //in the middle of both restarts
-            System.out.println("two is up next");
-        } else if (f1diff < 0 && f2diff < 0) {
-            System.out.println("one is up next (next day)");
-        }
-
-        System.out.println("------------------------------------------------");
     }
 
     private Date addDays(Date date, int days) {
