@@ -25,10 +25,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 
-@Plugin(id="autorestarterec", name="AutoRestarterEC", version = "2.0")
+@Plugin(id="autorestarterec", name="AutoRestarterEC", version = "4.0")
 public class Main {
     private Date shutdownTime;
-    private final List<Integer> ALERT_TIMES = new ArrayList(Arrays.asList(1, 5, 10, 30, 60, 120, 180, 240, 300, 600, 1800));
+    private final List<Integer> ALERT_TIMES = new ArrayList(Arrays.asList(1, 5, 10, 30, 60, 300, 600, 1800));
     private List<Integer> done = new ArrayList<>();
 
     @Inject
