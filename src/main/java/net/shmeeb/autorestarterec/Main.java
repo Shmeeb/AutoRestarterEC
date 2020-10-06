@@ -154,6 +154,12 @@ public class Main {
                     } else {
                         timeFormat = secondsBetween / 60 + " minutes";
                         Sponge.getServer().getBroadcastChannel().send(TextSerializers.FORMATTING_CODE.deserialize(color(broadcastMessage.replace("{TIME}", timeFormat))));
+                        if ((secondsBetween / 60) == 30) {
+                            Sponge.getCommandManager().process(
+                                    Sponge.getServer().getConsole(),
+                                    "boss delay"
+                            );
+                        }
                     }
 
                     //less than 1 minute
