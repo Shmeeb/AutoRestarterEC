@@ -28,7 +28,7 @@ import java.util.*;
 @Plugin(id="autorestarterec", name="AutoRestarterEC", version = "4.0")
 public class Main {
     private Date shutdownTime;
-    private final List<Integer> ALERT_TIMES = new ArrayList(Arrays.asList(1, 5, 10, 30, 60, 300, 600, 1800));
+    private final List<Integer> ALERT_TIMES = new ArrayList(Arrays.asList(1, 10, 30, 60, 300, 600, 1800));
     private List<Integer> done = new ArrayList<>();
 
     @Inject
@@ -41,7 +41,9 @@ public class Main {
 
     private String broadcastMessage, broadcastMessageLogOff, broadcastMessageKicking, kickMessage;
     private int hour1, hour2, minute1, minute2, second1, second2;
-    private boolean restarted = false;
+    private boolean restarted, cleared_bingo = false;
+    private boolean delay_clearing_bingo = false;
+    private boolean delayed = false;
 
     @Listener
     public void onStart(GameInitializationEvent e) {
@@ -77,18 +79,24 @@ public class Main {
 
     private CommandSpec delayCmd = CommandSpec.builder()
             .permission("autorestart.delay")
-            .arguments(GenericArguments.optional(GenericArguments.integer(Text.of("minutes"))))
+            .arguments(
+                    GenericArguments.optional(GenericArguments.integer(Text.of("minutes"))),
+                    GenericArguments.optional(GenericArguments.bool(Text.of("clear bingo?")))
+            )
             .executor(new CommandExecutor() {
                 @Override
                 public CommandResult execute(CommandSource src, CommandContext args) throws CommandException {
                     if (args.getOne("minutes").isPresent()) {
                         int s = args.<Integer>getOne("minutes").get();
-                        if (s > 0 && s <= 720) {
-                            setupShutdownTimeDate(s);
-                            sendMessage(src, "&aRescheduled a restart in " + s + " minutes from now");
+
+                        if (args.getOne("clear bingo?").isPresent() && args.<Boolean>getOne("clear bingo?").get()) {
+                            delay_clearing_bingo = true;
                         } else {
-                            sendMessage(src, "&cValue must be between 1 and 360");
+                            delay_clearing_bingo = false;
                         }
+
+                        setupShutdownTimeDate(s);
+                        sendMessage(src, "&aRescheduled a restart in " + s + " minutes from now. " + (delay_clearing_bingo ? "Bingo will be cleared." : "Bingo will not be cleared."));
                     } else {
                         Date now = new Date();
                         int secondsBetween = (int)((shutdownTime.getTime() - now.getTime()) / 1000L);
@@ -107,7 +115,19 @@ public class Main {
                     Date now = new Date();
                     int secondsBetween = (int) ((shutdownTime.getTime() - now.getTime()) / 1000L);
 
-                    if (secondsBetween <= 1 && !restarted) {
+                    if (secondsBetween <= 5 && !cleared_bingo) {
+                        if (delayed && delay_clearing_bingo) {
+                            cleared_bingo = true;
+                            System.out.println("[AutoRestarter] Running /bingo --reset");
+                            Sponge.getCommandManager().process(Sponge.getServer().getConsole(), "bingo --reset");
+                        } else if (!delayed) {
+                            cleared_bingo = true;
+                            System.out.println("[AutoRestarter] Running /bingo --reset");
+                            Sponge.getCommandManager().process(Sponge.getServer().getConsole(), "bingo --reset");
+                        }
+                    }
+
+                    if (secondsBetween <= 2 && !restarted) {
                         restarted = true;
 
                         System.out.println("[AutoRestarter] Kicking all players");
@@ -116,8 +136,8 @@ public class Main {
                         System.out.println("[AutoRestarter] Running /stop");
                         Sponge.getCommandManager().process(Sponge.getServer().getConsole(), "stop");
                     }
-                }
-        ).submit(instance);
+
+                }).submit(instance);
     }
 
     private void startAnnounceTask() {
