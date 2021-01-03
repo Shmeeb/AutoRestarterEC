@@ -43,7 +43,7 @@ public class Main {
     private int hour1, hour2, minute1, minute2, second1, second2;
     private boolean restarted, cleared_bingo = false;
     private boolean delay_clearing_bingo = false;
-    private boolean delayed = false;
+    private boolean saved = false;
 
     @Listener
     public void onStart(GameInitializationEvent e) {
@@ -109,35 +109,27 @@ public class Main {
             }).build();
 
     private void startRestartTask() {
-        Task.Builder taskBuilder = Task.builder().name("rebooter-restart-thread").intervalTicks(6);
-        taskBuilder.execute(
-                task -> {
-                    Date now = new Date();
-                    int secondsBetween = (int) ((shutdownTime.getTime() - now.getTime()) / 1000L);
+        Task.builder().name("rebooter-restart-thread").intervalTicks(10).execute(task -> {
+            int secondsBetween = (int) ((shutdownTime.getTime() - new Date().getTime()) / 1000L);
 
-                    if (secondsBetween <= 5 && !cleared_bingo) {
-                        if (delayed && delay_clearing_bingo) {
-                            cleared_bingo = true;
-                            System.out.println("[AutoRestarter] Running /bingo --reset");
-                            Sponge.getCommandManager().process(Sponge.getServer().getConsole(), "bingo --reset");
-                        } else if (!delayed) {
-                            cleared_bingo = true;
-                            System.out.println("[AutoRestarter] Running /bingo --reset");
-                            Sponge.getCommandManager().process(Sponge.getServer().getConsole(), "bingo --reset");
-                        }
-                    }
+            if (secondsBetween <= 5 && delay_clearing_bingo && !cleared_bingo) {
+                cleared_bingo = true;
+                System.out.println("[AutoRestarter] Running /bingo --reset");
+                Sponge.getCommandManager().process(Sponge.getServer().getConsole(), "bingo --reset");
+            }
 
-                    if (secondsBetween <= 2 && !restarted) {
-                        restarted = true;
+            if (secondsBetween <= 4 && !saved) {
+                saved = true;
+                System.out.println("[AutoRestarter] Running /save-all");
+                Sponge.getCommandManager().process(Sponge.getServer().getConsole(), "save-all");
+            }
 
-                        System.out.println("[AutoRestarter] Kicking all players");
-                        Sponge.getCommandManager().process(Sponge.getServer().getConsole(), "kickall " + kickMessage);
-
-                        System.out.println("[AutoRestarter] Running /stop");
-                        Sponge.getCommandManager().process(Sponge.getServer().getConsole(), "stop");
-                    }
-
-                }).submit(instance);
+            if (secondsBetween <= 2 && !restarted) {
+                restarted = true;
+                System.out.println("[AutoRestarter] Running /stop");
+                Sponge.getCommandManager().process(Sponge.getServer().getConsole(), "stop");
+            }
+        }).submit(instance);
     }
 
     private void startAnnounceTask() {
