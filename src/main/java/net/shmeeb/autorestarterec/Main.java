@@ -1,8 +1,12 @@
 package net.shmeeb.autorestarterec;
 
+import com.google.common.reflect.TypeToken;
+import com.google.inject.CreationException;
 import com.google.inject.Inject;
 import ninja.leaping.configurate.commented.CommentedConfigurationNode;
+import ninja.leaping.configurate.hocon.HoconConfigurationLoader;
 import ninja.leaping.configurate.loader.ConfigurationLoader;
+import ninja.leaping.configurate.objectmapping.ObjectMappingException;
 import org.spongepowered.api.Sponge;
 import org.spongepowered.api.command.CommandException;
 import org.spongepowered.api.command.CommandResult;
@@ -18,113 +22,157 @@ import org.spongepowered.api.event.game.state.GamePreInitializationEvent;
 import org.spongepowered.api.plugin.Plugin;
 import org.spongepowered.api.scheduler.Task;
 import org.spongepowered.api.text.Text;
+import org.spongepowered.api.text.channel.MessageChannel;
 import org.spongepowered.api.text.serializer.TextSerializers;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.temporal.ChronoUnit;
+import java.time.temporal.TemporalUnit;
 import java.util.*;
 
 @Plugin(id="autorestarterec", name="AutoRestarterEC", version = "4.0")
 public class Main {
-    private Date shutdownTime;
-    private final List<Integer> ALERT_TIMES = new ArrayList(Arrays.asList(1, 10, 30, 60, 300, 600, 1800));
-    private List<Integer> done = new ArrayList<>();
+    @Inject
+    @DefaultConfig(sharedRoot = true)
+    public Path path;
 
     @Inject
     @DefaultConfig(sharedRoot = true)
-    private Path path;
-    @Inject @DefaultConfig(sharedRoot = true)
-    private ConfigurationLoader<CommentedConfigurationNode> loader;
-    private CommentedConfigurationNode root;
-    private static Main instance;
+    public ConfigurationLoader<CommentedConfigurationNode> loader;
 
-    private String broadcastMessage, broadcastMessageLogOff, broadcastMessageKicking, kickMessage;
-    private int hour1, hour2, minute1, minute2, second1, second2;
-    private boolean restarted, cleared_bingo = false;
-    private boolean delay_clearing_bingo = false;
-    private boolean saved = false;
+    public CommentedConfigurationNode root;
+    public static Main instance;
+
+    public static boolean restarted, cleared_bingo = false;
+    public static boolean delay_clearing_bingo = true;
+    public static boolean saved = false;
+
+    public static List<Long> done = new ArrayList<>();
+    public static List<LocalTime> reboot_times = new ArrayList<>();
+    public static LocalTime reboot_time = null;
+    public static String serverName, broadcastMsg, logOffMsg, kickingMsg, kickMsg;
 
     @Listener
-    public void onStart(GameInitializationEvent e) {
+    public void onStart(GameInitializationEvent e) throws IOException {
         instance = this;
-        Sponge.getCommandManager().register(this, delayCmd, "delay");
-        setupShutdownTimeDate(0);
-        startRestartTask();
-        startAnnounceTask();
-    }
 
-    @Listener
-    public void init(GamePreInitializationEvent e) throws IOException {
-        if (!Files.exists(path)) {
+        if (!Files.exists(path))
             Sponge.getAssetManager().getAsset(this, "default.conf").get().copyToFile(path);
-        }
 
+        loader = HoconConfigurationLoader.builder().setPath(path).build();
         root = loader.load();
         root.getNode("times").setComment("Time: (24 hour time, see here http://www.onlineconversion.com/date_12-24_hour.htm)");
+        serverName = root.getNode("server-name").getString("?");
 
-        hour1 = root.getNode("times").getNode("one").getNode("hour").getInt();
-        minute1 = root.getNode("times").getNode("one").getNode("minute").getInt();
-        second1 = root.getNode("times").getNode("one").getNode("second").getInt();
+        broadcastMsg = "&e[" + serverName + " ] &aServer rebooting in {TIME}!";
+        logOffMsg = "&e[" + serverName + " ] &aServer rebooting in {TIME}! Please log off now!";
+        kickingMsg = "&e[" + serverName + " ] &aKicking all players...";
+        kickMsg = "Server rebooting, we'll be back in about a minute!";
 
-        hour2 = root.getNode("times").getNode("two").getNode("hour").getInt();
-        minute2 = root.getNode("times").getNode("two").getNode("minute").getInt();
-        second2 = root.getNode("times").getNode("two").getNode("second").getInt();
+        try {
+            for (String t : root.getNode("times").getList(TypeToken.of(String.class))) {
+                String[] arr = t.split(":");
+                LocalTime time = LocalTime.of(Integer.parseInt(arr[0]), Integer.parseInt(arr[1]), 0);
 
-        broadcastMessage = root.getNode("messages").getNode("broadcast-message").getString();
-        broadcastMessageLogOff = root.getNode("messages").getNode("broadcast-message-log-off").getString();
-        broadcastMessageKicking = root.getNode("messages").getNode("kicking-all").getString();
-        kickMessage = root.getNode("messages").getNode("kick-message").getString();
+                reboot_times.add(time);
+            }
+
+            for (LocalTime time : reboot_times) {
+                if (time.isBefore(getNow())) continue;
+                if (getNow().until(time, ChronoUnit.MINUTES) <= 30) continue;
+
+                reboot_time = time;
+                break;
+            }
+
+            if (reboot_time == null)
+                reboot_time = reboot_times.get(0);
+
+        } catch (ObjectMappingException ex) {
+            ex.printStackTrace();
+        }
+
+        Sponge.getCommandManager().register(this, delayCmd, "delay");
+        startRestartTask();
     }
 
-    private CommandSpec delayCmd = CommandSpec.builder()
-            .permission("autorestart.delay")
-            .arguments(
-                    GenericArguments.optional(GenericArguments.integer(Text.of("minutes"))),
-                    GenericArguments.optional(GenericArguments.bool(Text.of("clear bingo?")))
-            )
-            .executor(new CommandExecutor() {
-                @Override
-                public CommandResult execute(CommandSource src, CommandContext args) throws CommandException {
-                    if (args.getOne("minutes").isPresent()) {
-                        int s = args.<Integer>getOne("minutes").get();
+    public static LocalTime getNow() {
+        return LocalTime.now();
+//        return LocalTime.of(6, 45, 0, 0);
+    }
 
-                        if (args.getOne("clear bingo?").isPresent() && args.<Boolean>getOne("clear bingo?").get()) {
-                            delay_clearing_bingo = true;
-                        } else {
-                            delay_clearing_bingo = false;
-                        }
+    public static long getSecondsUntilReboot() {
+        long seconds =  getNow().until(reboot_time, ChronoUnit.SECONDS);
 
-                        setupShutdownTimeDate(s);
-                        sendMessage(src, "&aRescheduled a restart in " + s + " minutes from now. " + (delay_clearing_bingo ? "Bingo will be cleared." : "Bingo will not be cleared."));
-                    } else {
-                        Date now = new Date();
-                        int secondsBetween = (int)((shutdownTime.getTime() - now.getTime()) / 1000L);
-                        sendMessage(src, "&aNext scheduled restart happens at " + shutdownTime.toString() + " (" + secondsBetween/60 + " minutes)");
-                        sendMessage(src, "&aType /delay <mins> to schedule one sooner");
-                    }
+        if (seconds > 0) return seconds;
 
-                    return CommandResult.success();
-                }
-            }).build();
+        seconds =  getNow().until(LocalTime.MAX, ChronoUnit.SECONDS);
+        seconds += LocalTime.MIDNIGHT.until(reboot_time, ChronoUnit.SECONDS);
+
+        return seconds;
+    }
 
     private void startRestartTask() {
-        Task.builder().name("rebooter-restart-thread").intervalTicks(10).execute(task -> {
-            int secondsBetween = (int) ((shutdownTime.getTime() - new Date().getTime()) / 1000L);
+        Task.builder().intervalTicks(10).execute(task -> {
+            long seconds = getSecondsUntilReboot();
 
-            if (secondsBetween <= 5 && delay_clearing_bingo && !cleared_bingo) {
+            //                                     10m,  30m
+            if (Arrays.asList(1L, 10, 30, 60, 120, 600, 1800).contains(seconds)) {
+                if (done.contains(seconds)) return;
+                done.add(seconds);
+                String timeFormat;
+
+                //1 minute or more
+                if (seconds >= 60) {
+                    if (seconds == 60) {
+                        timeFormat = seconds / 60 + " minute";
+                        MessageChannel.TO_ALL.send(getText(broadcastMsg.replace("{TIME}", timeFormat)));
+                    } else {
+                        timeFormat = seconds / 60 + " minutes";
+                        MessageChannel.TO_ALL.send(getText(broadcastMsg.replace("{TIME}", timeFormat)));
+
+                        if ((seconds / 60) == 30) 
+                            Sponge.getCommandManager().process(Sponge.getServer().getConsole(), "boss delay");
+                    }
+
+                    //less than 1 minute
+                } else {
+                    if (seconds <= 5) {
+                        if (seconds == 1) {
+                            timeFormat = seconds + " second";
+
+                            MessageChannel.TO_ALL.send(getText(logOffMsg.replace("{TIME}", timeFormat)));
+                            MessageChannel.TO_ALL.send(getText(kickingMsg));
+                        } else {
+                            timeFormat = seconds + " seconds";
+
+                            MessageChannel.TO_ALL.send(getText(logOffMsg.replace("{TIME}", timeFormat)));
+                        }
+                    } else {
+                        timeFormat = seconds + " seconds";
+
+                        MessageChannel.TO_ALL.send(getText(broadcastMsg.replace("{TIME}", timeFormat)));
+                    }
+                }
+            }
+
+            if (seconds <= 5 && delay_clearing_bingo && !cleared_bingo) {
                 cleared_bingo = true;
                 System.out.println("[AutoRestarter] Running /bingo --reset");
                 Sponge.getCommandManager().process(Sponge.getServer().getConsole(), "bingo --reset");
             }
 
-            if (secondsBetween <= 4 && !saved) {
+            if (seconds <= 4 && !saved) {
                 saved = true;
                 System.out.println("[AutoRestarter] Running /save-all");
                 Sponge.getCommandManager().process(Sponge.getServer().getConsole(), "save-all");
             }
 
-            if (secondsBetween <= 2 && !restarted) {
+            if (seconds <= 2 && !restarted) {
                 restarted = true;
                 System.out.println("[AutoRestarter] Running /stop");
                 Sponge.getCommandManager().process(Sponge.getServer().getConsole(), "stop");
@@ -132,159 +180,47 @@ public class Main {
         }).submit(instance);
     }
 
-    private void startAnnounceTask() {
-        Task.Builder taskBuilder = Task.builder().name("rebooter-announce-thread").intervalTicks(6);
-        taskBuilder.execute(
-                task -> {
-                    attemptAnnounce();
-                }
-        ).submit(instance);
-    }
+    public static CommandSpec delayCmd = CommandSpec.builder()
+            .permission("autorestart.delay")
+            .arguments(
+                    GenericArguments.optional(GenericArguments.integer(Text.of("minutes"))),
+                    GenericArguments.optional(GenericArguments.bool(Text.of("clear bingo?")))
+            ).executor((src, args) -> {
+                if (args.getOne("minutes").isPresent()) {
+                    int mins = args.<Integer>getOne("minutes").get();
 
-    private void attemptAnnounce() {
-        Date now = new Date();
-        int secondsBetween = (int)((shutdownTime.getTime() - now.getTime()) / 1000L);
-//        if (secondsBetween % 20 == 0) {
-//            System.out.println("time till restart: " + secondsBetween);
-//        }
-
-        if (ALERT_TIMES.contains(secondsBetween)) {
-            if (!done.contains(secondsBetween)) {
-                done.add(secondsBetween);
-                String timeFormat;
-
-                //1 minute or more
-                if (secondsBetween >= 60) {
-                    if (secondsBetween == 60) {
-                        timeFormat = secondsBetween / 60 + " minute";
-                        Sponge.getServer().getBroadcastChannel().send(TextSerializers.FORMATTING_CODE.deserialize(color(broadcastMessage.replace("{TIME}", timeFormat))));
-
-//                        String string = Main.announceMsg.replace("%player%", player.getName());
-//                        Text text = TextSerializers.FORMATTING_CODE.deserialize(Utils.color(string));
-//                        Sponge.getServer().getBroadcastChannel().send(text);
-
+                    if (args.getOne("clear bingo?").isPresent() && args.<Boolean>getOne("clear bingo?").get()) {
+                        delay_clearing_bingo = true;
                     } else {
-                        timeFormat = secondsBetween / 60 + " minutes";
-                        Sponge.getServer().getBroadcastChannel().send(TextSerializers.FORMATTING_CODE.deserialize(color(broadcastMessage.replace("{TIME}", timeFormat))));
-                        if ((secondsBetween / 60) == 30) {
-                            Sponge.getCommandManager().process(
-                                    Sponge.getServer().getConsole(),
-                                    "boss delay"
-                            );
-                        }
+                        delay_clearing_bingo = false;
                     }
 
-                    //less than 1 minute
+                    reboot_time = getNow().plus(mins, ChronoUnit.MINUTES);
+                    done.clear();
+
+                    sendMessage(src, "&aRescheduled a restart in " + mins + " minutes from now. " + (delay_clearing_bingo ? "Bingo will be cleared." : "Bingo will not be cleared."));
                 } else {
-                    if (secondsBetween <= 5) {
-                        if (secondsBetween == 1) {
-                            timeFormat = secondsBetween + " second";
-                            Sponge.getServer().getBroadcastChannel().send(TextSerializers.FORMATTING_CODE.deserialize(color(broadcastMessageLogOff.replace("{TIME}", timeFormat))));
-                            Sponge.getServer().getBroadcastChannel().send(TextSerializers.FORMATTING_CODE.deserialize(color(broadcastMessageKicking)));
-                        } else {
-                            timeFormat = secondsBetween + " seconds";
-                            Sponge.getServer().getBroadcastChannel().send(TextSerializers.FORMATTING_CODE.deserialize(color(broadcastMessageLogOff.replace("{TIME}", timeFormat))));
-                        }
-                    } else {
-                        timeFormat = secondsBetween + " seconds";
-                        Sponge.getServer().getBroadcastChannel().send(TextSerializers.FORMATTING_CODE.deserialize(color(broadcastMessage.replace("{TIME}", timeFormat))));
-                    }
+                    long seconds = getSecondsUntilReboot();
+
+                    sendMessage(src, "&aNext scheduled restart happens at " + reboot_time.toString() + " PST (" + seconds / 60 + " minutes)");
+                    sendMessage(src, "&aType /delay <mins> to schedule one sooner");
                 }
-            }
-        }
-    }
 
-    @SuppressWarnings("deprecation")
-    private void setupShutdownTimeDate(int minutes) {
-        done.clear();
-        if (minutes != 0) {
-            Date now = new Date();
-            Date future = new Date();
-
-            future.setHours(now.getHours());
-            future.setMinutes(now.getMinutes() + minutes);
-            future.setSeconds(now.getSeconds());
-            shutdownTime = future;
-        } else {
-            Date future1 = new Date();
-            Date future2 = new Date();
-            Date now = new Date();
-
-            future1.setHours(hour1);
-            future1.setMinutes(minute1);
-            future1.setSeconds(second1);
-
-            future2.setHours(hour2);
-            future2.setMinutes(minute2);
-            future2.setSeconds(second2);
-
-//            outputDebug(now, future1, future2);
-
-            long f1diff = future1.getTime() - now.getTime();
-            long f2diff = future2.getTime() - now.getTime();
-
-            if (f1diff > 0 && f2diff > 0 && f2diff > f1diff) { //both restarts are in the future
-//                System.out.println("one is up next");
-                shutdownTime = future1;
-            } else if (f1diff < 0 && f2diff > 0 && f2diff > f1diff) { //in the middle of both restarts
-//                System.out.println("two is up next");
-                shutdownTime = future2;
-            } else if (f1diff < 0 && f2diff < 0) { //after both restarts
-//                System.out.println("one is up next (next day)");
-                Date nextDay = addDays(future1, 1);
-//                System.out.println(nextDay.toString());
-                shutdownTime = nextDay;
-            }
-        }
-    }
-
-    private void outputDebug(Date now, Date future1, Date future2) {
-        System.out.println("------------------------------------------------");
-
-        System.out.println("timestamps:");
-        System.out.println("future1 debug: " + future1.toString());
-        System.out.println("future2 debug: " + future2.toString());
-
-        System.out.println("differences:");
-        int f1secondsBetween = (int) ((future1.getTime() - now.getTime()) / 1000L);
-        int f2secondsBetween = (int) ((future2.getTime() - now.getTime()) / 1000L);
-
-        if (f1secondsBetween > f2secondsBetween) {
-            System.out.println("f1 - now = " + String.valueOf(f1secondsBetween) + "s (greater)");
-            System.out.println("f2 - now = " + String.valueOf(f2secondsBetween) + "s");
-        } else {
-            System.out.println("f1 - now = " + String.valueOf(f1secondsBetween) + "s");
-            System.out.println("f2 - now = " + String.valueOf(f2secondsBetween) + "s (greater)");
-        }
-
-        long f1diff = future1.getTime() - now.getTime();
-        long f2diff = future2.getTime() - now.getTime();
-
-        if (f1diff > 0 && f2diff > 0 && f2diff > f1diff) {
-            System.out.println("one is up next");
-        } else if (f1diff < 0 && f2diff > 0 && f2diff > f1diff) { //in the middle of both restarts
-            System.out.println("two is up next");
-        } else if (f1diff < 0 && f2diff < 0) {
-            System.out.println("one is up next (next day)");
-        }
-
-        System.out.println("------------------------------------------------");
-    }
-
-    private Date addDays(Date date, int days) {
-        GregorianCalendar cal = new GregorianCalendar();
-        cal.setTime(date);
-        cal.add(Calendar.DATE, days);
-
-        return cal.getTime();
-    }
-
-    private static String color(String string) {
-        return TextSerializers.FORMATTING_CODE.serialize(Text.of(string));
-    }
+                return CommandResult.success();
+            }).build();
 
     private static void sendMessage(CommandSource sender, String message) {
-        if (sender == null) { return; }
-        sender.sendMessage(TextSerializers.FORMATTING_CODE.deserialize(color(message)));
+        if (sender == null) {
+            return;
+        }
+        sender.sendMessage(getText(message));
+    }
+
+    public static Text getText(String message) {
+        return TextSerializers.FORMATTING_CODE.deserialize(color(message));
+    }
+
+    public static String color(String string) {
+        return TextSerializers.FORMATTING_CODE.serialize(Text.of(string));
     }
 }
