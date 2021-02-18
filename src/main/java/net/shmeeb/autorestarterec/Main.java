@@ -57,23 +57,24 @@ public class Main {
     public static String serverName, broadcastMsg, logOffMsg, kickingMsg, kickMsg;
 
     @Listener
-    public void onStart(GameInitializationEvent e) throws IOException {
-        instance = this;
-
-        if (!Files.exists(path))
-            Sponge.getAssetManager().getAsset(this, "default.conf").get().copyToFile(path);
-
-        loader = HoconConfigurationLoader.builder().setPath(path).build();
-        root = loader.load();
-        root.getNode("times").setComment("Time: (24 hour time, see here http://www.onlineconversion.com/date_12-24_hour.htm)");
-        serverName = root.getNode("server-name").getString("?");
-
-        broadcastMsg = "&e[" + serverName + " ] &aServer rebooting in {TIME}!";
-        logOffMsg = "&e[" + serverName + " ] &aServer rebooting in {TIME}! Please log off now!";
-        kickingMsg = "&e[" + serverName + " ] &aKicking all players...";
-        kickMsg = "Server rebooting, we'll be back in about a minute!";
-
+    public void onStart(GameInitializationEvent e) {
         try {
+            System.out.println("enabling AutoRestarterEC...");
+            instance = this;
+
+            if (!Files.exists(path))
+                Sponge.getAssetManager().getAsset(this, "default.conf").get().copyToFile(path);
+
+            loader = HoconConfigurationLoader.builder().setPath(path).build();
+            root = loader.load();
+            root.getNode("times").setComment("Time: (24 hour time, see here http://www.onlineconversion.com/date_12-24_hour.htm)");
+            serverName = root.getNode("server-name").getString("?");
+
+            broadcastMsg = "&e[" + serverName + " ] &aServer rebooting in {TIME}!";
+            logOffMsg = "&e[" + serverName + " ] &aServer rebooting in {TIME}! Please log off now!";
+            kickingMsg = "&e[" + serverName + " ] &aKicking all players...";
+            kickMsg = "Server rebooting, we'll be back in about a minute!";
+
             for (String t : root.getNode("times").getList(TypeToken.of(String.class))) {
                 String[] arr = t.split(":");
                 LocalTime time = LocalTime.of(Integer.parseInt(arr[0]), Integer.parseInt(arr[1]), 0);
@@ -83,7 +84,7 @@ public class Main {
 
             for (LocalTime time : reboot_times) {
                 if (time.isBefore(getNow())) continue;
-                if (getNow().until(time, ChronoUnit.MINUTES) <= 30) continue;
+                if (getNow().until(time, ChronoUnit.MINUTES) <= 60) continue;
 
                 reboot_time = time;
                 break;
@@ -92,12 +93,18 @@ public class Main {
             if (reboot_time == null)
                 reboot_time = reboot_times.get(0);
 
-        } catch (ObjectMappingException ex) {
+        } catch (ObjectMappingException | IOException ex) {
             ex.printStackTrace();
         }
 
+        if (reboot_time == null)
+            System.out.println("failed to schedule an auto reboot!");
+        else
+            System.out.println("selected " + reboot_time.toString() + " PST as the next scheduled reboot");
+
         Sponge.getCommandManager().register(this, delayCmd, "delay");
         startRestartTask();
+
     }
 
     public static LocalTime getNow() {
