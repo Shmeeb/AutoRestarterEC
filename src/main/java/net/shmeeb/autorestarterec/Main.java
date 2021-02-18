@@ -1,5 +1,6 @@
 package net.shmeeb.autorestarterec;
 
+import com.google.common.collect.Lists;
 import com.google.common.reflect.TypeToken;
 import com.google.inject.CreationException;
 import com.google.inject.Inject;
@@ -57,45 +58,50 @@ public class Main {
     public static String serverName, broadcastMsg, logOffMsg, kickingMsg, kickMsg;
 
     @Listener
-    public void onStart(GameInitializationEvent e) {
+    public void onStart(GameInitializationEvent e) throws IOException {
+        System.out.println("enabling AutoRestarterEC...");
+        instance = this;
+
+        if (!Files.exists(path))
+            Sponge.getAssetManager().getAsset(this, "default.conf").get().copyToFile(path);
+
+        loader = HoconConfigurationLoader.builder().setPath(path).build();
+        root = loader.load();
+        root.getNode("times").setComment("Time: (24 hour time, see here http://www.onlineconversion.com/date_12-24_hour.htm)");
+        serverName = root.getNode("server-name").getString("?");
+
+        broadcastMsg = "&e[" + serverName + "] &aServer rebooting in {TIME}!";
+        logOffMsg = "&e[" + serverName + "] &aServer rebooting in {TIME}! Please log off now!";
+        kickingMsg = "&e[" + serverName + "] &aKicking all players...";
+        kickMsg = "Server rebooting, we'll be back in about a minute!";
+
         try {
-            System.out.println("enabling AutoRestarterEC...");
-            instance = this;
-
-            if (!Files.exists(path))
-                Sponge.getAssetManager().getAsset(this, "default.conf").get().copyToFile(path);
-
-            loader = HoconConfigurationLoader.builder().setPath(path).build();
-            root = loader.load();
-            root.getNode("times").setComment("Time: (24 hour time, see here http://www.onlineconversion.com/date_12-24_hour.htm)");
-            serverName = root.getNode("server-name").getString("?");
-
-            broadcastMsg = "&e[" + serverName + " ] &aServer rebooting in {TIME}!";
-            logOffMsg = "&e[" + serverName + " ] &aServer rebooting in {TIME}! Please log off now!";
-            kickingMsg = "&e[" + serverName + " ] &aKicking all players...";
-            kickMsg = "Server rebooting, we'll be back in about a minute!";
-
             for (String t : root.getNode("times").getList(TypeToken.of(String.class))) {
                 String[] arr = t.split(":");
                 LocalTime time = LocalTime.of(Integer.parseInt(arr[0]), Integer.parseInt(arr[1]), 0);
 
                 reboot_times.add(time);
             }
-
-            for (LocalTime time : reboot_times) {
-                if (time.isBefore(getNow())) continue;
-                if (getNow().until(time, ChronoUnit.MINUTES) <= 60) continue;
-
-                reboot_time = time;
-                break;
-            }
-
-            if (reboot_time == null)
-                reboot_time = reboot_times.get(0);
-
-        } catch (ObjectMappingException | IOException ex) {
+        } catch (ObjectMappingException ex) {
             ex.printStackTrace();
+
+//            reboot_times.addAll(Lists.newArrayList(
+//                    LocalTime.of(7, 0),
+//                    LocalTime.of(13, 0),
+//                    LocalTime.of(21, 0)
+//            ));
         }
+
+        for (LocalTime time : reboot_times) {
+            if (time.isBefore(getNow())) continue;
+            if (getNow().until(time, ChronoUnit.MINUTES) <= 60) continue;
+
+            reboot_time = time;
+            break;
+        }
+
+        if (reboot_time == null)
+            reboot_time = reboot_times.get(0);
 
         if (reboot_time == null)
             System.out.println("failed to schedule an auto reboot!");
@@ -127,8 +133,8 @@ public class Main {
         Task.builder().intervalTicks(10).execute(task -> {
             long seconds = getSecondsUntilReboot();
 
-            //                                     10m,  30m
-            if (Arrays.asList(1L, 10, 30, 60, 120, 600, 1800).contains(seconds)) {
+            //                                          10m,  30m
+            if (Arrays.asList(1L, 10L, 30L, 60L, 120L, 600L, 1800L).contains(seconds)) {
                 if (done.contains(seconds)) return;
                 done.add(seconds);
                 String timeFormat;
