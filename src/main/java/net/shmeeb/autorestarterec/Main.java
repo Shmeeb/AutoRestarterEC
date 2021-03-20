@@ -179,11 +179,11 @@ public class Main {
                 Sponge.getCommandManager().process(Sponge.getServer().getConsole(), "bingo --reset");
             }
 
-            if (seconds <= 4 && !saved) {
-                saved = true;
-                System.out.println("[AutoRestarter] Running /save-all");
-                Sponge.getCommandManager().process(Sponge.getServer().getConsole(), "save-all");
-            }
+//            if (seconds <= 4 && !saved) {
+//                saved = true;
+//                System.out.println("[AutoRestarter] Running /save-all");
+//                Sponge.getCommandManager().process(Sponge.getServer().getConsole(), "save-all");
+//            }
 
             if (seconds <= 2 && !restarted) {
                 restarted = true;
