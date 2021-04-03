@@ -8,6 +8,8 @@ import ninja.leaping.configurate.commented.CommentedConfigurationNode;
 import ninja.leaping.configurate.hocon.HoconConfigurationLoader;
 import ninja.leaping.configurate.loader.ConfigurationLoader;
 import ninja.leaping.configurate.objectmapping.ObjectMappingException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.spongepowered.api.Sponge;
 import org.spongepowered.api.command.CommandException;
 import org.spongepowered.api.command.CommandResult;
@@ -51,6 +53,7 @@ public class Main {
     public static boolean restarted, cleared_bingo = false;
     public static boolean delay_clearing_bingo = true;
     public static boolean saved = false;
+    private Logger logger = LoggerFactory.getLogger("AutoRestarterEC");
 
     public static List<Long> done = new ArrayList<>();
     public static List<LocalTime> reboot_times = new ArrayList<>();
@@ -59,7 +62,7 @@ public class Main {
 
     @Listener
     public void onStart(GameInitializationEvent e) throws IOException {
-        System.out.println("enabling AutoRestarterEC...");
+        logger.info("enabling AutoRestarterEC...");
         instance = this;
 
         if (!Files.exists(path))
@@ -104,9 +107,9 @@ public class Main {
             reboot_time = reboot_times.get(0);
 
         if (reboot_time == null)
-            System.out.println("failed to schedule an auto reboot!");
+            logger.info("failed to schedule an auto reboot!");
         else
-            System.out.println("selected " + reboot_time.toString() + " PST as the next scheduled reboot");
+            logger.info("selected " + reboot_time.toString() + " PST as the next scheduled reboot");
 
         Sponge.getCommandManager().register(this, delayCmd, "delay");
         startRestartTask();
@@ -123,7 +126,7 @@ public class Main {
 
         if (seconds > 0) return seconds;
 
-        seconds =  getNow().until(LocalTime.MAX, ChronoUnit.SECONDS);
+        seconds = getNow().until(LocalTime.MAX, ChronoUnit.SECONDS);
         seconds += LocalTime.MIDNIGHT.until(reboot_time, ChronoUnit.SECONDS);
 
         return seconds;
@@ -173,21 +176,25 @@ public class Main {
                 }
             }
 
+            if (seconds <= 6) {
+                logger.info(seconds + " until reboot");
+            }
+
             if (seconds <= 5 && delay_clearing_bingo && !cleared_bingo) {
                 cleared_bingo = true;
-                System.out.println("[AutoRestarter] Running /bingo --reset");
+                logger.info("Running /bingo --reset");
                 Sponge.getCommandManager().process(Sponge.getServer().getConsole(), "bingo --reset");
             }
 
 //            if (seconds <= 4 && !saved) {
 //                saved = true;
-//                System.out.println("[AutoRestarter] Running /save-all");
+//                logger.info("Running /save-all");
 //                Sponge.getCommandManager().process(Sponge.getServer().getConsole(), "save-all");
 //            }
 
-            if (seconds <= 2 && !restarted) {
+            if (seconds <= 3 && !restarted) {
                 restarted = true;
-                System.out.println("[AutoRestarter] Running /stop");
+                logger.info("Running /stop");
                 Sponge.getCommandManager().process(Sponge.getServer().getConsole(), "stop");
             }
         }).submit(instance);
