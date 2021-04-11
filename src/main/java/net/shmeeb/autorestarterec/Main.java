@@ -19,6 +19,7 @@ import org.spongepowered.api.command.args.GenericArguments;
 import org.spongepowered.api.command.spec.CommandExecutor;
 import org.spongepowered.api.command.spec.CommandSpec;
 import org.spongepowered.api.config.DefaultConfig;
+import org.spongepowered.api.entity.living.player.Player;
 import org.spongepowered.api.event.Listener;
 import org.spongepowered.api.event.game.state.GameInitializationEvent;
 import org.spongepowered.api.event.game.state.GamePreInitializationEvent;
@@ -27,6 +28,8 @@ import org.spongepowered.api.scheduler.Task;
 import org.spongepowered.api.text.Text;
 import org.spongepowered.api.text.channel.MessageChannel;
 import org.spongepowered.api.text.serializer.TextSerializers;
+import org.spongepowered.api.text.title.Title;
+import org.spongepowered.api.world.World;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -36,6 +39,7 @@ import java.time.LocalTime;
 import java.time.temporal.ChronoUnit;
 import java.time.temporal.TemporalUnit;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Plugin(id="autorestarterec", name="AutoRestarterEC", version = "4.0")
 public class Main {
@@ -50,9 +54,8 @@ public class Main {
     public CommentedConfigurationNode root;
     public static Main instance;
 
-    public static boolean restarted, cleared_bingo = false;
     public static boolean delay_clearing_bingo = true;
-    public static boolean saved = false;
+    public static boolean restarted, cleared_bingo, saved, kicked, sentTitle = false;
     private Logger logger = LoggerFactory.getLogger("AutoRestarterEC");
 
     public static List<Long> done = new ArrayList<>();
@@ -176,23 +179,46 @@ public class Main {
                 }
             }
 
-            if (seconds <= 6) {
-                logger.info(seconds + " until reboot");
+            if (seconds <= 10) {
+                logger.info(seconds + "s until reboot");
             }
 
-            if (seconds <= 5 && delay_clearing_bingo && !cleared_bingo) {
+            if (seconds <= 10 && delay_clearing_bingo && !cleared_bingo) {
                 cleared_bingo = true;
                 logger.info("Running /bingo --reset");
+
                 Sponge.getCommandManager().process(Sponge.getServer().getConsole(), "bingo --reset");
             }
 
-//            if (seconds <= 4 && !saved) {
-//                saved = true;
-//                logger.info("Running /save-all");
-//                Sponge.getCommandManager().process(Sponge.getServer().getConsole(), "save-all");
-//            }
+            if (seconds <= 7 && !sentTitle) {
+                sentTitle = true;
+                logger.info("Sending warning title");
 
-            if (seconds <= 3 && !restarted) {
+                Title title = Title.builder()
+                        .title(getText("&c&lServer Rebooting!"))
+//                        .subtitle(getText(""))
+                        .stay(40)
+                        .build();
+
+                Sponge.getServer().getOnlinePlayers().forEach(p -> p.sendTitle(title));
+            }
+
+            if (seconds <= 5 && !kicked) {
+                kicked = true;
+                logger.info("Running /kickall");
+                Sponge.getCommandManager().process(Sponge.getServer().getConsole(), "kickall");
+            }
+
+            if (seconds <= 3 && !saved) {
+                saved = true;
+
+                logger.info("Need to save the following worlds: " + Sponge.getServer().getWorlds().stream().map(World::getName).collect(Collectors.joining(", ")));
+
+                logger.info("Running /save-all");
+                Sponge.getCommandManager().process(Sponge.getServer().getConsole(), "save-all");
+            }
+
+            if (seconds <= 1 && !restarted) {
                 restarted = true;
                 logger.info("Running /stop");
                 Sponge.getCommandManager().process(Sponge.getServer().getConsole(), "stop");
