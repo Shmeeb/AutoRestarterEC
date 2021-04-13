@@ -20,6 +20,7 @@ import org.spongepowered.api.command.spec.CommandExecutor;
 import org.spongepowered.api.command.spec.CommandSpec;
 import org.spongepowered.api.config.DefaultConfig;
 import org.spongepowered.api.entity.living.player.Player;
+import org.spongepowered.api.entity.living.player.User;
 import org.spongepowered.api.event.Listener;
 import org.spongepowered.api.event.game.state.GameInitializationEvent;
 import org.spongepowered.api.event.game.state.GamePreInitializationEvent;
@@ -30,6 +31,7 @@ import org.spongepowered.api.text.channel.MessageChannel;
 import org.spongepowered.api.text.serializer.TextSerializers;
 import org.spongepowered.api.text.title.Title;
 import org.spongepowered.api.world.World;
+import org.spongepowered.common.entity.player.SpongeUser;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -216,6 +218,9 @@ public class Main {
 
                 logger.info("Running /save-all");
                 Sponge.getCommandManager().process(Sponge.getServer().getConsole(), "save-all");
+
+                logger.info("Saving playerdata of " + SpongeUser.dirtyUsers.size() + " players...");
+                SpongeUser.dirtyUsers.forEach(SpongeUser::save);
             }
 
             if (seconds <= 1 && !restarted) {
