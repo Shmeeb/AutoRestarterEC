@@ -208,7 +208,7 @@ public class Main {
             if (seconds <= 5 && !kicked) {
                 kicked = true;
                 logger.info("Running /kickall");
-                Sponge.getCommandManager().process(Sponge.getServer().getConsole(), "kickall");
+                Sponge.getCommandManager().process(Sponge.getServer().getConsole(), "kickall Server rebooting, we'll be back in about a minute!");
             }
 
             if (seconds <= 3 && !saved) {
@@ -216,11 +216,11 @@ public class Main {
 
                 logger.info("Need to save the following worlds: " + Sponge.getServer().getWorlds().stream().map(World::getName).collect(Collectors.joining(", ")));
 
-                logger.info("Running /save-all");
-                Sponge.getCommandManager().process(Sponge.getServer().getConsole(), "save-all");
-
                 logger.info("Saving playerdata of " + SpongeUser.dirtyUsers.size() + " players...");
                 SpongeUser.dirtyUsers.forEach(SpongeUser::save);
+
+                logger.info("Running /save-all");
+                Sponge.getCommandManager().process(Sponge.getServer().getConsole(), "save-all");
             }
 
             if (seconds <= 1 && !restarted) {
