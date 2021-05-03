@@ -158,6 +158,7 @@ public class Main {
 
                         if ((seconds / 60) == 30) 
                             Sponge.getCommandManager().process(Sponge.getServer().getConsole(), "boss delay");
+                            Sponge.getCommandManager().process(Sponge.getServer().getConsole(), "pokestop delay");
                     }
 
                     //less than 1 minute
