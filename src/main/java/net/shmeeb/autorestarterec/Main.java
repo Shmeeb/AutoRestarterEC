@@ -138,7 +138,7 @@ public class Main {
     }
 
     private void startRestartTask() {
-        Task.builder().intervalTicks(10).execute(task -> {
+        Task.builder().intervalTicks(2).execute(task -> {
             long seconds = getSecondsUntilReboot();
 
             //                                          10m,  30m
@@ -208,8 +208,8 @@ public class Main {
 
             if (seconds <= 5 && !kicked) {
                 kicked = true;
-                logger.info("Running /kickall");
-                Sponge.getCommandManager().process(Sponge.getServer().getConsole(), "kickall Server rebooting, we'll be back in about a minute!");
+                logger.info("Running /mec kickall");
+                Sponge.getCommandManager().process(Sponge.getServer().getConsole(), "mec kickall");
             }
 
             if (seconds <= 3 && !saved) {
