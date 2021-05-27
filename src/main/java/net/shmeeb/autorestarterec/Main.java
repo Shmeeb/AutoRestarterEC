@@ -41,6 +41,7 @@ import java.time.LocalTime;
 import java.time.temporal.ChronoUnit;
 import java.time.temporal.TemporalUnit;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 @Plugin(id="autorestarterec", name="AutoRestarterEC", version = "4.0")
@@ -220,14 +221,16 @@ public class Main {
                 logger.info("Saving playerdata of " + SpongeUser.dirtyUsers.size() + " players...");
                 SpongeUser.dirtyUsers.forEach(SpongeUser::save);
 
+                Task.builder().delay(2,  TimeUnit.SECONDS).execute(task2 -> {
+                    if (!restarted) {
+                        restarted = true;
+                        logger.info("Running /stop");
+                        Sponge.getCommandManager().process(Sponge.getServer().getConsole(), "stop");
+                    }
+                }).submit(instance);
+
                 logger.info("Running /save-all");
                 Sponge.getCommandManager().process(Sponge.getServer().getConsole(), "save-all");
-            }
-
-            if (seconds <= 1 && !restarted) {
-                restarted = true;
-                logger.info("Running /stop");
-                Sponge.getCommandManager().process(Sponge.getServer().getConsole(), "stop");
             }
         }).submit(instance);
     }
